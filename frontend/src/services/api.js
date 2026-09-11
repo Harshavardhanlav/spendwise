@@ -1,4 +1,8 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const configuredApiUrl = process.env.REACT_APP_API_URL;
+const defaultApiUrl = process.env.NODE_ENV === 'production'
+  ? 'https://spendwise-5h8t.onrender.com'
+  : 'http://localhost:5000';
+const API_BASE_URL = (configuredApiUrl || defaultApiUrl).replace(/\/+$/, '');
 
 export async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
