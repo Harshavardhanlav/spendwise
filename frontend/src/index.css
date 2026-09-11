@@ -1,13 +1,44 @@
+:root {
+  --sw-canvas: #f5f6f8;
+  --sw-surface: #ffffff;
+  --sw-surface-muted: #fafbfc;
+  --sw-ink: #0f1a2a;
+  --sw-ink-soft: #33404f;
+  --sw-text: #1c2a3d;
+  --sw-text-muted: #6b7585;
+  --sw-text-faint: #8b95a5;
+  --sw-border: #e1e4e9;
+  --sw-border-subtle: #edeff2;
+  --sw-primary: #2b5fd9;
+  --sw-primary-soft: #eef3fe;
+  --sw-income: #12734a;
+  --sw-income-soft: #e9f5ef;
+  --sw-expense: #b42318;
+  --sw-expense-soft: #fdecea;
+  --sw-warning: #a15c07;
+  --sw-radius: 8px;
+  --sw-shadow: 0 1px 2px rgba(15, 26, 42, 0.04);
+}
+
+* { box-sizing: border-box; }
+
+html { min-width: 320px; background: var(--sw-canvas); }
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  background: var(--sw-canvas);
+  color: var(--sw-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible { outline: 3px solid rgba(43, 95, 217, 0.35); outline-offset: 2px; }
+
+::selection { background: #dce6fd; color: var(--sw-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
