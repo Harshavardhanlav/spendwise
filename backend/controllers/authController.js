@@ -1,0 +1,326 @@
+const crypto = require("crypto");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const User = require("../models/user");
+
+const verificationCodeExpiresMinutes = Number(
+	process.env.EMAIL_VERIFICATION_EXPIRES_MINUTES || 10
+);
+
+const createMailTransporter = () => {
+	const requiredSettings = [
+		"SMTP_HOST",
+		"SMTP_PORT",
+		"SMTP_USER",
+		"SMTP_PASS",
+		"EMAIL_FROM"
+	];
+
+	if (requiredSettings.some((setting) => !process.env[setting])) {
+		const error = new Error("Email service is not configured");
+		error.code = "EMAIL_NOT_CONFIGURED";
+		throw error;
+	}
+
+	return nodemailer.createTransport({
+		host: process.env.SMTP_HOST,
+		port: Number(process.env.SMTP_PORT),
+		secure: process.env.SMTP_SECURE === "true",
+		auth: {
+			user: process.env.SMTP_USER,
+			pass: process.env.SMTP_PASS.replace(/\s+/g, "")
+		}
+	});
+};
+
+const isSmtpAuthenticationError = (error) => (
+	error?.code === "EAUTH" || error?.responseCode === 535
+);
+
+const sendVerificationEmail = async (email, name, verificationCode) => {
+	const transporter = createMailTransporter();
+
+	await transporter.sendMail({
+		from: process.env.EMAIL_FROM,
+		to: email,
+		subject: "Verify your SpendWise email",
+		text: `Hi ${name}, your SpendWise verification code is ${verificationCode}. It expires in ${verificationCodeExpiresMinutes} minutes.`
+	});
+};
+
+const verifyEmailTransport = async () => {
+	try {
+		const transporter = createMailTransporter();
+		await transporter.verify();
+		console.log("SMTP configuration verified successfully");
+	} catch (error) {
+		if (isSmtpAuthenticationError(error)) {
+			console.error("SMTP authentication failed: check SMTP_USER and the Gmail App Password in backend/.env");
+			return;
+		}
+
+		if (error?.code === "EMAIL_NOT_CONFIGURED") {
+			console.error("SMTP configuration check failed: required SMTP environment variables are missing");
+			return;
+		}
+
+		console.error("SMTP connection check failed:", error.message);
+	}
+};
+
+const register = async (req, res) => {
+	const name = typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name;
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+
+	try {
+		if (typeof name !== "string" || !name) {
+			return res.status(400).json({
+				error: "Name is required"
+			});
+		}
+
+		if (typeof email !== "string" || !email) {
+			return res.status(400).json({
+				error: "Email is required"
+			});
+		}
+
+		const existingUser = await User.findOne({ email }).select("_id").lean();
+		if (existingUser) {
+			return res.status(409).json({
+				error: "An account with this email already exists"
+			});
+		}
+
+		const verificationCode = crypto.randomInt(100000, 1000000).toString();
+		const verificationExpires = new Date(
+			Date.now() + verificationCodeExpiresMinutes * 60 * 1000
+		);
+
+		const user = await User.create({
+			name,
+			email,
+			emailVerificationCode: verificationCode,
+			emailVerificationExpires: verificationExpires
+		});
+
+		try {
+			await sendVerificationEmail(email, name, verificationCode);
+		} catch (emailError) {
+			await User.deleteOne({ _id: user._id });
+			throw emailError;
+		}
+
+		return res.status(201).json({
+			message: "A verification code has been sent to your email"
+		});
+	} catch (error) {
+		if (error.code === 11000) {
+			return res.status(409).json({
+				error: "An account with this email already exists"
+			});
+		}
+
+		if (error.name === "ValidationError") {
+			return res.status(400).json({
+				error: "Invalid registration data",
+				details: Object.values(error.errors).map((validationError) => validationError.message)
+			});
+		}
+
+		if (error.code === "EMAIL_NOT_CONFIGURED") {
+			return res.status(503).json({
+				error: "Email service is not configured"
+			});
+		}
+
+		if (isSmtpAuthenticationError(error)) {
+			console.error("Registration email failed: SMTP authentication failed");
+			return res.status(502).json({
+				error: "Email service authentication failed"
+			});
+		}
+
+		console.error("Registration failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to register user"
+		});
+	}
+};
+
+const verifyEmail = async (req, res) => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const verificationCode = typeof req.body?.verificationCode === "string"
+		? req.body.verificationCode.trim()
+		: req.body?.verificationCode;
+
+	if (typeof email !== "string" || !email) {
+		return res.status(400).json({
+			error: "Email is required"
+		});
+	}
+
+	if (typeof verificationCode !== "string" || !verificationCode) {
+		return res.status(400).json({
+			error: "Verification code is required"
+		});
+	}
+
+	try {
+		const user = await User.findOne({ email });
+
+		if (!user) {
+			return res.status(404).json({
+				error: "User not found"
+			});
+		}
+
+		if (user.isEmailVerified) {
+			return res.status(409).json({
+				error: "Email is already verified"
+			});
+		}
+
+		if (user.emailVerificationCode !== verificationCode) {
+			return res.status(400).json({
+				error: "Invalid verification code"
+			});
+		}
+
+		if (!user.emailVerificationExpires || user.emailVerificationExpires <= new Date()) {
+			return res.status(400).json({
+				error: "Verification code has expired"
+			});
+		}
+
+		user.isEmailVerified = true;
+		user.emailVerificationCode = null;
+		user.emailVerificationExpires = null;
+		await user.save();
+
+		return res.status(200).json({
+			message: "Email verified successfully. You can now set your password."
+		});
+	} catch (error) {
+		console.error("Email verification failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to verify email"
+		});
+	}
+};
+
+const setPassword = async (req, res) => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const password = req.body?.password;
+
+	if (typeof email !== "string" || !email) {
+		return res.status(400).json({
+			error: "Email is required"
+		});
+	}
+
+	if (typeof password !== "string" || !password.trim() || password.length < 8) {
+		return res.status(400).json({
+			error: "Password must be at least 8 characters long"
+		});
+	}
+
+	try {
+		const user = await User.findOne({ email });
+
+		if (!user) {
+			return res.status(404).json({
+				error: "User not found"
+			});
+		}
+
+		if (!user.isEmailVerified) {
+			return res.status(403).json({
+				error: "Email must be verified before setting a password"
+			});
+		}
+
+		user.password = await bcrypt.hash(password, 12);
+		await user.save();
+
+		return res.status(200).json({
+			message: "Password set successfully. You can now log in."
+		});
+	} catch (error) {
+		console.error("Setting password failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to set password"
+		});
+	}
+};
+
+const login = async (req, res) => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const password = req.body?.password;
+
+	if (typeof email !== "string" || !email || typeof password !== "string" || !password) {
+		return res.status(400).json({
+			error: "Email and password are required"
+		});
+	}
+
+	if (!process.env.JWT_SECRET) {
+		console.error("Login failed: JWT_SECRET is not configured");
+		return res.status(503).json({
+			error: "Authentication service is not configured"
+		});
+	}
+
+	try {
+		const user = await User.findOne({ email });
+
+		if (!user) {
+			return res.status(401).json({
+				error: "Invalid email or password"
+			});
+		}
+
+		if (!user.isEmailVerified) {
+			return res.status(403).json({
+				error: "Email must be verified before logging in"
+			});
+		}
+
+		if (!user.password) {
+			return res.status(401).json({
+				error: "Invalid email or password"
+			});
+		}
+
+		const passwordMatches = await bcrypt.compare(password, user.password);
+		if (!passwordMatches) {
+			return res.status(401).json({
+				error: "Invalid email or password"
+			});
+		}
+
+		const token = jwt.sign(
+			{ id: user._id.toString() },
+			process.env.JWT_SECRET,
+			{ expiresIn: process.env.JWT_EXPIRES_IN || "1h" }
+		);
+
+		return res.status(200).json({
+			token,
+			user: {
+				id: user._id,
+				name: user.name,
+				email: user.email,
+				currency: user.currency
+			}
+		});
+	} catch (error) {
+		console.error("Login failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to log in"
+		});
+	}
+};
+
+module.exports = { register, verifyEmail, setPassword, login, verifyEmailTransport };
