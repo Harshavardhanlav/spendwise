@@ -38,6 +38,15 @@ const isSmtpAuthenticationError = (error) => (
 	error?.code === "EAUTH" || error?.responseCode === 535
 );
 
+const safeUser = (user) => ({
+	_id: user._id,
+	name: user.name,
+	email: user.email,
+	currency: user.currency,
+	isEmailVerified: user.isEmailVerified,
+	createdAt: user.createdAt
+});
+
 const sendVerificationEmail = async (email, name, verificationCode) => {
 	const transporter = createMailTransporter();
 
@@ -449,6 +458,79 @@ const resetPassword = async (req, res) => {
 	}
 };
 
+const getCurrentUser = async (req, res) => {
+	return res.status(200).json({ user: safeUser(req.user) });
+};
+
+const updateProfile = async (req, res) => {
+	const name = typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name;
+
+	if (typeof name !== "string" || !name) {
+		return res.status(400).json({ error: "Name is required" });
+	}
+
+	if (name.length < 2 || name.length > 50) {
+		return res.status(400).json({ error: "Name must be between 2 and 50 characters" });
+	}
+
+	try {
+		req.user.name = name;
+		await req.user.save();
+		return res.status(200).json({ user: safeUser(req.user) });
+	} catch (error) {
+		if (error.name === "ValidationError") {
+			return res.status(400).json({ error: "Invalid profile data" });
+		}
+
+		console.error("Profile update failed:", error.message);
+		return res.status(500).json({ error: "Unable to update profile" });
+	}
+};
+
+const updateCurrency = async (req, res) => {
+	const allowedCurrencies = ["INR", "USD", "EUR", "GBP"];
+	const currency = typeof req.body?.currency === "string" ? req.body.currency.trim().toUpperCase() : req.body?.currency;
+
+	if (!allowedCurrencies.includes(currency)) {
+		return res.status(400).json({ error: "Currency must be INR, USD, EUR, or GBP" });
+	}
+
+	try {
+		req.user.currency = currency;
+		await req.user.save();
+		return res.status(200).json({ user: safeUser(req.user) });
+	} catch (error) {
+		console.error("Currency update failed:", error.message);
+		return res.status(500).json({ error: "Unable to update currency" });
+	}
+};
+
+const changePassword = async (req, res) => {
+	const currentPassword = req.body?.currentPassword;
+	const newPassword = req.body?.newPassword;
+
+	if (typeof currentPassword !== "string" || !currentPassword || typeof newPassword !== "string" || !newPassword) {
+		return res.status(400).json({ error: "Current password and new password are required" });
+	}
+
+	if (!newPassword.trim() || newPassword.length < 8) {
+		return res.status(400).json({ error: "New password must be at least 8 characters long" });
+	}
+
+	try {
+		if (!req.user.password || !(await bcrypt.compare(currentPassword, req.user.password))) {
+			return res.status(401).json({ error: "Current password is incorrect" });
+		}
+
+		req.user.password = await bcrypt.hash(newPassword, 12);
+		await req.user.save();
+		return res.status(200).json({ message: "Password changed successfully." });
+	} catch (error) {
+		console.error("Password change failed:", error.message);
+		return res.status(500).json({ error: "Unable to change password" });
+	}
+};
+
 module.exports = {
 	register,
 	verifyEmail,
@@ -456,5 +538,9 @@ module.exports = {
 	login,
 	forgotPassword,
 	resetPassword,
+	getCurrentUser,
+	updateProfile,
+	updateCurrency,
+	changePassword,
 	verifyEmailTransport
 };

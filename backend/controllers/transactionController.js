@@ -127,6 +127,107 @@ const buildTransactionQuery = (req) => {
 	return { query };
 };
 
+const buildReportDateMatch = (userId, startDate, endDate) => {
+	const match = { userId };
+	if (startDate === undefined && endDate === undefined) {
+		return { match };
+	}
+
+	const dateMatch = {};
+	if (startDate !== undefined) {
+		const parsedStartDate = parseDate(startDate);
+		if (!parsedStartDate) return { error: "Start date is invalid" };
+		dateMatch.$gte = parsedStartDate;
+	}
+	if (endDate !== undefined) {
+		const parsedEndDate = parseDate(endDate);
+		if (!parsedEndDate) return { error: "End date is invalid" };
+		if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+			const exclusiveEndDate = new Date(parsedEndDate);
+			exclusiveEndDate.setUTCDate(exclusiveEndDate.getUTCDate() + 1);
+			dateMatch.$lt = exclusiveEndDate;
+		} else {
+			dateMatch.$lte = parsedEndDate;
+		}
+	}
+
+	if (dateMatch.$gte && dateMatch.$lt && dateMatch.$gte >= dateMatch.$lt) {
+		return { error: "Start date must not be after end date" };
+	}
+	if (dateMatch.$gte && dateMatch.$lte && dateMatch.$gte > dateMatch.$lte) {
+		return { error: "Start date must not be after end date" };
+	}
+
+	return { match: { ...match, date: dateMatch } };
+};
+
+const getReportDateMatch = (req) => buildReportDateMatch(
+	req.user._id,
+	req.query.startDate,
+	req.query.endDate
+);
+
+const getTotalsForMatch = async (match) => {
+	const result = await Transaction.aggregate([
+		{ $match: match },
+		{
+			$group: {
+				_id: null,
+				totalIncome: { $sum: { $cond: [{ $eq: ["$type", "income"] }, "$amount", 0] } },
+				totalExpense: { $sum: { $cond: [{ $eq: ["$type", "expense"] }, "$amount", 0] } }
+			}
+		}
+	]);
+
+	const totals = result[0] || { totalIncome: 0, totalExpense: 0 };
+	return {
+		income: totals.totalIncome || 0,
+		expense: totals.totalExpense || 0,
+		balance: (totals.totalIncome || 0) - (totals.totalExpense || 0)
+	};
+};
+
+const percentageChange = (current, previous) => (
+	previous === 0 ? null : Number((((current - previous) / previous) * 100).toFixed(2))
+);
+
+const getComparisonDateMatches = (req) => {
+	const { startDate, endDate } = req.query;
+	if (startDate === undefined && endDate === undefined) {
+		const now = new Date();
+		const currentStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+		const currentEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+		const previousStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+		return { currentStart, currentEnd, previousStart, previousEnd: currentStart };
+	}
+
+	if (startDate === undefined || endDate === undefined) {
+		return { error: "Both startDate and endDate are required for comparison" };
+	}
+
+	const parsedStart = parseDate(startDate);
+	const parsedEnd = parseDate(endDate);
+	if (!parsedStart) return { error: "Start date is invalid" };
+	if (!parsedEnd) return { error: "End date is invalid" };
+
+	const currentStart = parsedStart;
+	const currentEnd = new Date(parsedEnd);
+	if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+		currentEnd.setUTCDate(currentEnd.getUTCDate() + 1);
+	} else {
+		currentEnd.setTime(currentEnd.getTime() + 1);
+	}
+
+	if (currentStart >= currentEnd) return { error: "Start date must not be after end date" };
+	const periodLength = currentEnd.getTime() - currentStart.getTime();
+	return {
+		currentStart,
+		currentEnd,
+		previousStart: new Date(currentStart.getTime() - periodLength),
+		previousEnd: currentStart
+	};
+};
+
 const getTransactions = async (req, res) => {
 	try {
 		const filterResult = buildTransactionQuery(req);
@@ -143,8 +244,11 @@ const getTransactions = async (req, res) => {
 
 const getSummary = async (req, res) => {
 	try {
+		const dateResult = getReportDateMatch(req);
+		if (dateResult.error) return res.status(400).json({ error: dateResult.error });
+
 		const result = await Transaction.aggregate([
-			{ $match: { userId: req.user._id } },
+			{ $match: dateResult.match },
 			{
 				$group: {
 					_id: null,
@@ -185,8 +289,11 @@ const getSummary = async (req, res) => {
 
 const getCategorySummary = async (req, res) => {
 	try {
+		const dateResult = getReportDateMatch(req);
+		if (dateResult.error) return res.status(400).json({ error: dateResult.error });
+
 		const result = await Transaction.aggregate([
-			{ $match: { userId: req.user._id, type: "expense" } },
+			{ $match: { ...dateResult.match, type: "expense" } },
 			{
 				$group: {
 					_id: "$categoryId",
@@ -207,7 +314,29 @@ const getCategorySummary = async (req, res) => {
 			};
 		});
 
-		return res.status(200).json({ categories });
+		const incomeResult = await Transaction.aggregate([
+			{ $match: { ...dateResult.match, type: "income" } },
+			{
+				$group: {
+					_id: "$categoryId",
+					totalAmount: { $sum: "$amount" },
+					transactionCount: { $sum: 1 }
+				}
+			},
+			{ $sort: { totalAmount: -1 } }
+		]);
+
+		const incomeCategories = incomeResult.map((item) => {
+			const category = req.user.categories.id(item._id);
+			return {
+				categoryId: item._id,
+				categoryName: category ? category.name : "Unknown",
+				totalAmount: item.totalAmount,
+				transactionCount: item.transactionCount
+			};
+		});
+
+		return res.status(200).json({ categories, expenseCategories: categories, incomeCategories });
 	} catch (error) {
 		return handleDatabaseError(res, error, "Retrieve category summary");
 	}
@@ -215,8 +344,11 @@ const getCategorySummary = async (req, res) => {
 
 const getMonthlySummary = async (req, res) => {
 	try {
+		const dateResult = getReportDateMatch(req);
+		if (dateResult.error) return res.status(400).json({ error: dateResult.error });
+
 		const result = await Transaction.aggregate([
-			{ $match: { userId: req.user._id } },
+			{ $match: dateResult.match },
 			{
 				$group: {
 					_id: { $dateToString: { format: "%Y-%m", date: "$date" } },
@@ -235,11 +367,97 @@ const getMonthlySummary = async (req, res) => {
 			monthly: result.map((item) => ({
 				month: item._id,
 				income: item.income,
-				expense: item.expense
+				expense: item.expense,
+				balance: item.income - item.expense
 			}))
 		});
 	} catch (error) {
 		return handleDatabaseError(res, error, "Retrieve monthly summary");
+	}
+};
+
+const getPaymentMethodSummary = async (req, res) => {
+	try {
+		const dateResult = getReportDateMatch(req);
+		if (dateResult.error) return res.status(400).json({ error: dateResult.error });
+
+		const paymentMethodsResult = await Transaction.aggregate([
+			{ $match: { ...dateResult.match, type: "expense" } },
+			{
+				$group: {
+					_id: "$paymentMethod",
+					totalAmount: { $sum: "$amount" },
+					transactionCount: { $sum: 1 }
+				}
+			},
+			{ $sort: { totalAmount: -1 } }
+		]);
+
+		return res.status(200).json({
+			paymentMethods: paymentMethodsResult.map((item) => ({
+				paymentMethod: item._id,
+				totalAmount: item.totalAmount,
+				transactionCount: item.transactionCount
+			}))
+		});
+	} catch (error) {
+		return handleDatabaseError(res, error, "Retrieve payment method summary");
+	}
+};
+
+const getComparison = async (req, res) => {
+	try {
+		const ranges = getComparisonDateMatches(req);
+		if (ranges.error) return res.status(400).json({ error: ranges.error });
+
+		const userId = req.user._id;
+		const [current, previous] = await Promise.all([
+			getTotalsForMatch({ userId, date: { $gte: ranges.currentStart, $lt: ranges.currentEnd } }),
+			getTotalsForMatch({ userId, date: { $gte: ranges.previousStart, $lt: ranges.previousEnd } })
+		]);
+
+		return res.status(200).json({
+			current,
+			previous,
+			changes: {
+				income: {
+					amount: current.income - previous.income,
+					percentage: percentageChange(current.income, previous.income)
+				},
+				expense: {
+					amount: current.expense - previous.expense,
+					percentage: percentageChange(current.expense, previous.expense)
+				},
+				balance: {
+					amount: current.balance - previous.balance,
+					percentage: percentageChange(current.balance, previous.balance)
+				}
+			}
+		});
+	} catch (error) {
+		return handleDatabaseError(res, error, "Retrieve transaction comparison");
+	}
+};
+
+const getReportTransactions = async (req, res) => {
+	try {
+		const filterResult = buildTransactionQuery(req);
+		if (filterResult.error) {
+			return res.status(filterResult.status || 400).json({ error: filterResult.error });
+		}
+
+		const { paymentMethod } = req.query;
+		if (paymentMethod !== undefined) {
+			if (!paymentMethods.includes(paymentMethod)) {
+				return res.status(400).json({ error: "Payment method is invalid" });
+			}
+			filterResult.query.paymentMethod = paymentMethod;
+		}
+
+		const transactions = await Transaction.find(filterResult.query).sort({ date: -1 });
+		return res.status(200).json({ transactions });
+	} catch (error) {
+		return handleDatabaseError(res, error, "Retrieve transaction report");
 	}
 };
 
@@ -404,6 +622,9 @@ module.exports = {
 	getSummary,
 	getCategorySummary,
 	getMonthlySummary,
+	getPaymentMethodSummary,
+	getComparison,
+	getReportTransactions,
 	createTransaction,
 	getTransaction,
 	updateTransaction,

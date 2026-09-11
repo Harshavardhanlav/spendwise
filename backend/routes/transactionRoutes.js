@@ -5,6 +5,9 @@ const {
 	getSummary,
 	getCategorySummary,
 	getMonthlySummary,
+	getPaymentMethodSummary,
+	getComparison,
+	getReportTransactions,
 	createTransaction,
 	getTransaction,
 	updateTransaction,
@@ -22,6 +25,9 @@ router.post("/", createTransaction);
 router.get("/summary", getSummary);
 router.get("/summary/categories", getCategorySummary);
 router.get("/summary/monthly", getMonthlySummary);
+router.get("/summary/payment-methods", getPaymentMethodSummary);
+router.get("/summary/comparison", getComparison);
+router.get("/report", getReportTransactions);
 
 // Get single transaction
 router.get("/:transactionId", getTransaction);
