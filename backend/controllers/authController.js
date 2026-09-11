@@ -49,6 +49,17 @@ const sendVerificationEmail = async (email, name, verificationCode) => {
 	});
 };
 
+const sendPasswordResetEmail = async (email, name, resetCode) => {
+	const transporter = createMailTransporter();
+
+	await transporter.sendMail({
+		from: process.env.EMAIL_FROM,
+		to: email,
+		subject: "Reset your SpendWise password",
+		text: `Hi ${name}, your SpendWise password reset code is ${resetCode}. It expires in ${verificationCodeExpiresMinutes} minutes. Use this code to create a new password.`
+	});
+};
+
 const verifyEmailTransport = async () => {
 	try {
 		const transporter = createMailTransporter();
@@ -323,4 +334,127 @@ const login = async (req, res) => {
 	}
 };
 
-module.exports = { register, verifyEmail, setPassword, login, verifyEmailTransport };
+const forgotPassword = async (req, res) => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const genericResponse = {
+		message: "If an account exists for this email, a password reset code has been sent."
+	};
+
+	if (typeof email !== "string" || !email) {
+		return res.status(400).json({
+			error: "Email is required"
+		});
+	}
+
+	try {
+		const user = await User.findOne({ email });
+		if (!user) {
+			return res.status(200).json(genericResponse);
+		}
+
+		const resetCode = crypto.randomInt(100000, 1000000).toString();
+		user.passwordResetCode = resetCode;
+		user.passwordResetExpires = new Date(
+			Date.now() + verificationCodeExpiresMinutes * 60 * 1000
+		);
+		await user.save();
+
+		try {
+			await sendPasswordResetEmail(user.email, user.name, resetCode);
+		} catch (emailError) {
+			user.passwordResetCode = null;
+			user.passwordResetExpires = null;
+			await user.save();
+			throw emailError;
+		}
+
+		return res.status(200).json(genericResponse);
+	} catch (error) {
+		if (error.code === "EMAIL_NOT_CONFIGURED") {
+			return res.status(503).json({
+				error: "Email service is not configured"
+			});
+		}
+
+		if (isSmtpAuthenticationError(error)) {
+			console.error("Password reset email failed: SMTP authentication failed");
+			return res.status(502).json({
+				error: "Email service authentication failed"
+			});
+		}
+
+		console.error("Forgot password request failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to process password reset request"
+		});
+	}
+};
+
+const resetPassword = async (req, res) => {
+	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const code = typeof req.body?.code === "string" ? req.body.code.trim() : req.body?.code;
+	const newPassword = req.body?.newPassword;
+
+	if (typeof email !== "string" || !email) {
+		return res.status(400).json({
+			error: "Email is required"
+		});
+	}
+
+	if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+		return res.status(400).json({
+			error: "A valid 6-digit reset code is required"
+		});
+	}
+
+	if (typeof newPassword !== "string" || !newPassword.trim() || newPassword.length < 8) {
+		return res.status(400).json({
+			error: "New password must be at least 8 characters long"
+		});
+	}
+
+	try {
+		const user = await User.findOne({ email });
+		if (!user) {
+			return res.status(400).json({
+				error: "Invalid or expired reset code"
+			});
+		}
+
+		if (!user.passwordResetCode || user.passwordResetCode !== code) {
+			return res.status(400).json({
+				error: "Invalid or expired reset code"
+			});
+		}
+
+		if (!user.passwordResetExpires || user.passwordResetExpires <= new Date()) {
+			return res.status(400).json({
+				error: "Invalid or expired reset code"
+			});
+		}
+
+		user.password = await bcrypt.hash(newPassword, 12);
+		user.passwordResetCode = null;
+		user.passwordResetExpires = null;
+		await user.save();
+
+		return res.status(200).json({
+			message: "Password reset successfully. You can now log in."
+		});
+	} catch (error) {
+		console.error("Password reset failed:", error.message);
+		return res.status(500).json({
+			error: "Unable to reset password"
+		});
+	}
+};
+
+module.exports = {
+	register,
+	verifyEmail,
+	setPassword,
+	login,
+	forgotPassword,
+	resetPassword,
+	verifyEmailTransport
+};

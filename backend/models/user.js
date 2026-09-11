@@ -56,6 +56,16 @@ const userSchema = new mongoose.Schema(
       default: null
     },
 
+    passwordResetCode: {
+      type: String,
+      default: null
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: null
+    },
+
     currency: {
       type: String,
       default: "INR"
