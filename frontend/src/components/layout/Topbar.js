@@ -6,11 +6,12 @@ const pageMeta = {
   transactions: { title: 'Transactions', context: 'Review and manage your money movement.' },
   categories: { title: 'Categories', context: 'Keep spending groups simple and useful.' },
   reports: { title: 'Reports', context: 'Patterns and summaries for better decisions.' },
+  budgets: { title: 'Budgets', context: 'Set spending limits and track progress.' },
   profile: { title: 'Profile', context: 'Your personal account details.' },
   settings: { title: 'Settings', context: 'Tune your SpendWise experience.' },
 };
 
-function Topbar({ activePage, onOpenMenu, onLogout }) {
+function Topbar({ activePage, onOpenMenu, onNavigate, onLogout }) {
   const meta = pageMeta[activePage] || pageMeta.dashboard;
 
   return (
@@ -29,8 +30,10 @@ function Topbar({ activePage, onOpenMenu, onLogout }) {
           <Bell size={18} aria-hidden="true" />
           <span className="notification-dot" />
         </button>
+        <button type="button" className="avatar profile-icon-button" aria-label="Open profile" onClick={() => onNavigate('profile')}>
+          <UserRound size={16} aria-hidden="true" />
+        </button>
         <button type="button" className="user-menu-button" aria-label="Log out" onClick={onLogout}>
-          <span className="avatar"><UserRound size={16} aria-hidden="true" /></span>
           <span className="user-menu-copy">
             <strong>SpendWise User</strong>
             <small>Personal account</small>

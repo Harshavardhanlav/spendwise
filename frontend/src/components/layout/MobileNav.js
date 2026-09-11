@@ -1,11 +1,12 @@
 import React from 'react';
-import { BarChart3, LayoutDashboard, Menu, Plus, Receipt, Shapes, X } from 'lucide-react';
+import { Banknote, BarChart3, LayoutDashboard, Menu, Plus, Receipt, Shapes, X } from 'lucide-react';
 
 const mobileItems = [
   { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
   { id: 'transactions', label: 'Activity', icon: Receipt },
   { id: 'categories', label: 'Categories', icon: Shapes },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'budgets', label: 'Budgets', icon: Banknote },
 ];
 
 function MobileNav({ open, activePage, onClose, onNavigate }) {
@@ -22,14 +23,14 @@ function MobileNav({ open, activePage, onClose, onNavigate }) {
               </button>
             </div>
             <div className="drawer-links">
-              {['dashboard', 'transactions', 'categories', 'reports', 'profile', 'settings'].map((id) => (
+              {['dashboard', 'transactions', 'categories', 'reports', 'budgets', 'profile', 'settings'].map((id) => (
                 <button
                   type="button"
                   key={id}
                   className={`drawer-link${activePage === id ? ' is-active' : ''}`}
                   onClick={() => { onNavigate(id); onClose(); }}
                 >
-                  {id.charAt(0).toUpperCase() + id.slice(1)}
+                  {id === 'budgets' ? 'Budgets' : id.charAt(0).toUpperCase() + id.slice(1)}
                 </button>
               ))}
             </div>
@@ -53,7 +54,13 @@ function MobileNav({ open, activePage, onClose, onNavigate }) {
         {mobileItems.slice(2).map((item) => {
           const Icon = item.icon;
           return (
-            <button type="button" key={item.id} className={`mobile-nav-item${activePage === item.id ? ' is-active' : ''}`} onClick={() => onNavigate(item.id)}>
+            <button
+              type="button"
+              key={item.id}
+              className={`mobile-nav-item${activePage === item.id ? ' is-active' : ''}`}
+              aria-label={item.id === 'budgets' ? 'Budget section' : item.label}
+              onClick={() => onNavigate(item.id)}
+            >
               <Icon size={18} aria-hidden="true" />
               <span>{item.label}</span>
             </button>

@@ -1,10 +1,11 @@
 import './App.css';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './pages/DashboardPage';
 import TransactionsPage from './pages/TransactionsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import ReportsPage from './pages/ReportsPage';
+import BudgetsPage from './pages/BudgetsPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
@@ -13,29 +14,93 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import SetPasswordPage from './pages/SetPasswordPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import { getCurrentUser } from './services/userApi';
 
 const pages = {
   dashboard: DashboardPage,
   transactions: TransactionsPage,
   categories: CategoriesPage,
   reports: ReportsPage,
+  budgets: BudgetsPage,
   profile: ProfilePage,
   settings: SettingsPage,
 };
 
+const getStoredUser = () => {
+  try {
+    const raw = localStorage.getItem('spendwiseUser');
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [authStage, setAuthStage] = useState(() => (localStorage.getItem('spendwiseToken') ? 'app' : 'login'));
+  const [authStage, setAuthStage] = useState('login');
   const [authEmail, setAuthEmail] = useState('');
+  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('spendwiseToken');
+    if (!token) {
+      setCurrentUser(null);
+      setAuthStage('login');
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let mounted = true;
+    getCurrentUser()
+      .then(({ user }) => {
+        if (!mounted) return;
+        setCurrentUser(user);
+        setAuthStage('app');
+        setActivePage('dashboard');
+      })
+      .catch(() => {
+        if (!mounted) return;
+        localStorage.removeItem('spendwiseToken');
+        localStorage.removeItem('spendwiseUser');
+        setCurrentUser(null);
+        setAuthStage('login');
+      })
+      .finally(() => {
+        if (mounted) setAuthLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const Page = pages[activePage];
   const logout = () => {
     localStorage.removeItem('spendwiseToken');
     localStorage.removeItem('spendwiseUser');
+    setCurrentUser(null);
     setAuthStage('login');
+    setActivePage('dashboard');
   };
 
+  const loginSuccess = (user) => {
+    setCurrentUser(user);
+    setAuthStage('app');
+    setActivePage('dashboard');
+  };
+
+  if (authLoading) {
+    return (
+      <div className="account-state">
+        <div className="dashboard-spinner" />
+        <h2>Checking your session</h2>
+      </div>
+    );
+  }
+
   if (authStage === 'login') {
-    return <LoginPage onLogin={() => setAuthStage('app')} onRegister={() => setAuthStage('register')} onForgotPassword={() => setAuthStage('forgot-password')} />;
+    return <LoginPage onLogin={loginSuccess} onRegister={() => setAuthStage('register')} onForgotPassword={() => setAuthStage('forgot-password')} />;
   }
 
   if (authStage === 'register') {
@@ -60,7 +125,7 @@ function App() {
 
   return (
     <AppShell activePage={activePage} onNavigate={setActivePage} onLogout={logout}>
-      <Page onUnauthorized={logout} onLogout={logout} />
+      <Page currentUser={currentUser} onUnauthorized={logout} onLogout={logout} />
     </AppShell>
   );
 }

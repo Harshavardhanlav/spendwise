@@ -23,6 +23,7 @@ function AppShell({ activePage, onNavigate, onLogout, children }) {
         <Topbar
           activePage={activePage}
           onOpenMenu={() => setMobileMenuOpen(true)}
+          onNavigate={onNavigate}
           onLogout={onLogout}
         />
         <main className="app-content">{children}</main>

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Banknote,
   BarChart3,
   LayoutDashboard,
   Receipt,
@@ -14,6 +15,7 @@ const primaryItems = [
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'categories', label: 'Categories', icon: Shapes },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'budgets', label: 'Budgets', icon: Banknote },
 ];
 
 const secondaryItems = [
