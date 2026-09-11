@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, X } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -23,12 +23,12 @@ function TransactionsPage({ onUnauthorized }) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     const result = await getCategories();
     setCategories(result.categories || []);
-  };
+  }, []);
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -40,7 +40,7 @@ function TransactionsPage({ onUnauthorized }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, onUnauthorized]);
 
   useEffect(() => {
     Promise.all([loadCategories(), loadTransactions()]).catch((requestError) => {
@@ -48,7 +48,7 @@ function TransactionsPage({ onUnauthorized }) {
       else setError(requestError.message);
       setLoading(false);
     });
-  }, [filters.type, filters.categoryId, filters.startDate, filters.endDate]);
+  }, [loadCategories, loadTransactions, onUnauthorized]);
 
   const visibleTransactions = useMemo(() => {
     const query = search.trim().toLowerCase();

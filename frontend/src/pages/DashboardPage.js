@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, RefreshCw, Wallet } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
@@ -17,7 +17,7 @@ function DashboardPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -33,9 +33,9 @@ function DashboardPage({ onUnauthorized }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onUnauthorized]);
 
-  useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   if (loading) return <div className="dashboard-state"><div className="dashboard-spinner" /><h2>Loading your dashboard</h2><p>Gathering your latest financial activity.</p></div>;
   if (error) return <div className="dashboard-state dashboard-error"><h2>We could not load your dashboard</h2><p>{error}</p><button type="button" className="button button-secondary" onClick={loadDashboard}><RefreshCw size={15} /> Try again</button></div>;

@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Download, RefreshCw, Wallet } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
-import Badge from '../components/ui/Badge';
 import ReportStatCard from '../components/finance/ReportStatCard';
 import CategoryReport from '../components/finance/CategoryReport';
 import MonthlyReport from '../components/finance/MonthlyReport';
@@ -23,8 +22,8 @@ function ReportsPage({ onUnauthorized }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const period = periodFor(selectedDate);
-  const loadReports = async () => {
+  const period = useMemo(() => periodFor(selectedDate), [selectedDate]);
+  const loadReports = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -38,9 +37,9 @@ function ReportsPage({ onUnauthorized }) {
       if (requestError.status === 401 || requestError.status === 403) return onUnauthorized();
       setError('Unable to load report data.');
     } finally { setLoading(false); }
-  };
+  }, [categoryFilter, onUnauthorized, period, transactionType]);
 
-  useEffect(() => { loadReports(); }, [selectedDate, transactionType, categoryFilter]);
+  useEffect(() => { loadReports(); }, [loadReports]);
 
   const visibleTransactions = report?.transactions || [];
   const currency = JSON.parse(localStorage.getItem('spendwiseUser') || '{}').currency || 'INR';

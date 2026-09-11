@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, RefreshCw, UserRound } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -15,7 +15,7 @@ function ProfilePage({ onUnauthorized }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const loadUser = async () => {
+  const loadUser = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const result = await getCurrentUser();
@@ -25,9 +25,9 @@ function ProfilePage({ onUnauthorized }) {
       if (requestError.status === 401 || requestError.status === 403) return onUnauthorized();
       setError(requestError.message);
     } finally { setLoading(false); }
-  };
+  }, [onUnauthorized]);
 
-  useEffect(() => { loadUser(); }, []);
+  useEffect(() => { loadUser(); }, [loadUser]);
 
   const saveName = async (event) => {
     event.preventDefault(); setError(''); setSuccess('');

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { Eye, EyeOff, LogOut } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import AuthField from '../components/auth/AuthField';
@@ -20,7 +20,7 @@ function SettingsPage({ onUnauthorized, onLogout }) {
       if (requestError.status === 401 || requestError.status === 403) onUnauthorized();
       else setError(requestError.message);
     }).finally(() => setLoading(false));
-  }, []);
+  }, [onUnauthorized]);
 
   const saveCurrency = async (event) => {
     event.preventDefault(); setError(''); setSuccess(''); setCurrencySaving(true);

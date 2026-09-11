@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw, Shapes, X } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -18,7 +18,7 @@ function CategoriesPage({ onUnauthorized }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -30,9 +30,9 @@ function CategoriesPage({ onUnauthorized }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onUnauthorized]);
 
-  useEffect(() => { loadCategories(); }, []);
+  useEffect(() => { loadCategories(); }, [loadCategories]);
 
   const openCreate = () => { setEditingCategory(null); setFormError(''); setModalOpen(true); };
   const openEdit = (category) => { setEditingCategory(category); setFormError(''); setModalOpen(true); };

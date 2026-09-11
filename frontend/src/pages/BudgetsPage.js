@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, Wallet, X } from 'lucide-react';
 import Card, { CardBody } from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -23,7 +23,7 @@ function BudgetsPage({ onUnauthorized }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const loadBudgets = async () => {
+  const loadBudgets = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -35,15 +35,11 @@ function BudgetsPage({ onUnauthorized }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onUnauthorized]);
 
   useEffect(() => {
-    loadBudgets().catch((requestError) => {
-      if (requestError.status === 401 || requestError.status === 403) onUnauthorized();
-      else setError('Unable to load budgets.');
-      setLoading(false);
-    });
-  }, []);
+    loadBudgets();
+  }, [loadBudgets]);
 
   const openCreate = () => {
     setEditingBudget(null);

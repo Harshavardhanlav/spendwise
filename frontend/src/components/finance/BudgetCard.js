@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CalendarRange, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 
 const money = (value, currency = 'INR') => new Intl.NumberFormat('en-IN', {
   style: 'currency',
