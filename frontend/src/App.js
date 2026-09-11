@@ -60,7 +60,7 @@ function App() {
 
   return (
     <AppShell activePage={activePage} onNavigate={setActivePage} onLogout={logout}>
-      <Page onUnauthorized={logout} />
+      <Page onUnauthorized={logout} onLogout={logout} />
     </AppShell>
   );
 }
