@@ -4,6 +4,15 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const User = require("../models/user");
 
+const defaultCategories = [
+	{ name: "Salary", icon: "💼" },
+	{ name: "College", icon: "🎓" },
+	{ name: "Food", icon: "🍔" },
+	{ name: "Outings", icon: "🎉" },
+	{ name: "Education", icon: "📚" },
+	{ name: "Others", icon: "📦" }
+];
+
 const verificationCodeExpiresMinutes = Number(
 	process.env.EMAIL_VERIFICATION_EXPIRES_MINUTES || 10
 );
@@ -39,6 +48,7 @@ const isSmtpAuthenticationError = (error) => (
 );
 
 const safeUser = (user) => ({
+	id: user._id,
 	_id: user._id,
 	name: user.name,
 	email: user.email,
@@ -122,7 +132,8 @@ const register = async (req, res) => {
 			name,
 			email,
 			emailVerificationCode: verificationCode,
-			emailVerificationExpires: verificationExpires
+			emailVerificationExpires: verificationExpires,
+			categories: defaultCategories
 		});
 
 		try {
@@ -328,12 +339,7 @@ const login = async (req, res) => {
 
 		return res.status(200).json({
 			token,
-			user: {
-				id: user._id,
-				name: user.name,
-				email: user.email,
-				currency: user.currency
-			}
+			user: safeUser(user)
 		});
 	} catch (error) {
 		console.error("Login failed:", error.message);
