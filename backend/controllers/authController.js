@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const User = require("../models/user");
+const PendingRegistration = require("../models/pendingRegistration");
 
 const defaultCategories = [
 	{ name: "Salary", icon: "💼" },
@@ -16,6 +17,7 @@ const defaultCategories = [
 const verificationCodeExpiresMinutes = Number(
 	process.env.EMAIL_VERIFICATION_EXPIRES_MINUTES || 10
 );
+const smtpTimeoutMs = Number(process.env.SMTP_TIMEOUT_MS || 15000);
 
 const createMailTransporter = () => {
 	const requiredSettings = [
@@ -36,6 +38,9 @@ const createMailTransporter = () => {
 		host: process.env.SMTP_HOST,
 		port: Number(process.env.SMTP_PORT),
 		secure: process.env.SMTP_SECURE === "true",
+		connectionTimeout: smtpTimeoutMs,
+		greetingTimeout: smtpTimeoutMs,
+		socketTimeout: smtpTimeoutMs,
 		auth: {
 			user: process.env.SMTP_USER,
 			pass: process.env.SMTP_PASS.replace(/\s+/g, "")
@@ -46,6 +51,15 @@ const createMailTransporter = () => {
 const isSmtpAuthenticationError = (error) => (
 	error?.code === "EAUTH" || error?.responseCode === 535
 );
+
+const normalizeEmail = (email) => (
+	typeof email === "string" ? email.trim().toLowerCase() : email
+);
+
+const hashVerificationCode = (verificationCode) => crypto
+	.createHash("sha256")
+	.update(verificationCode)
+	.digest("hex");
 
 const safeUser = (user) => ({
 	id: user._id,
@@ -101,7 +115,8 @@ const verifyEmailTransport = async () => {
 
 const register = async (req, res) => {
 	const name = typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name;
-	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const email = normalizeEmail(req.body?.email);
+	console.log("[AUTH] Registration request received");
 
 	try {
 		if (typeof name !== "string" || !name) {
@@ -115,11 +130,13 @@ const register = async (req, res) => {
 				error: "Email is required"
 			});
 		}
+		console.log("[AUTH] Registration email normalized");
 
 		const existingUser = await User.findOne({ email }).select("_id").lean();
+		console.log("[AUTH] Existing user check completed");
 		if (existingUser) {
 			return res.status(409).json({
-				error: "An account with this email already exists"
+				error: "Email already exists"
 			});
 		}
 
@@ -128,18 +145,25 @@ const register = async (req, res) => {
 			Date.now() + verificationCodeExpiresMinutes * 60 * 1000
 		);
 
-		const user = await User.create({
-			name,
-			email,
-			emailVerificationCode: verificationCode,
-			emailVerificationExpires: verificationExpires,
-			categories: defaultCategories
-		});
+		const pendingRegistration = await PendingRegistration.findOneAndUpdate(
+			{ email },
+			{
+				name,
+				verificationCodeHash: hashVerificationCode(verificationCode),
+				expiresAt: verificationExpires
+			},
+			{ upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+		);
 
 		try {
+			console.log("[AUTH] Verification email send started");
 			await sendVerificationEmail(email, name, verificationCode);
+			console.log("[AUTH] Verification email send completed");
 		} catch (emailError) {
-			await User.deleteOne({ _id: user._id });
+			await PendingRegistration.deleteOne({
+				_id: pendingRegistration._id,
+				verificationCodeHash: pendingRegistration.verificationCodeHash
+			});
 			throw emailError;
 		}
 
@@ -147,9 +171,10 @@ const register = async (req, res) => {
 			message: "A verification code has been sent to your email"
 		});
 	} catch (error) {
+		console.error("[AUTH] Registration failed");
 		if (error.code === 11000) {
 			return res.status(409).json({
-				error: "An account with this email already exists"
+				error: "Email already exists"
 			});
 		}
 
@@ -181,7 +206,7 @@ const register = async (req, res) => {
 };
 
 const verifyEmail = async (req, res) => {
-	const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : req.body?.email;
+	const email = normalizeEmail(req.body?.email);
 	const verificationCode = typeof req.body?.verificationCode === "string"
 		? req.body.verificationCode.trim()
 		: req.body?.verificationCode;
@@ -192,43 +217,50 @@ const verifyEmail = async (req, res) => {
 		});
 	}
 
-	if (typeof verificationCode !== "string" || !verificationCode) {
+	if (typeof verificationCode !== "string" || !/^\d{6}$/.test(verificationCode)) {
 		return res.status(400).json({
-			error: "Verification code is required"
+			error: "A valid 6-digit verification code is required"
 		});
 	}
 
 	try {
-		const user = await User.findOne({ email });
-
-		if (!user) {
-			return res.status(404).json({
-				error: "User not found"
-			});
-		}
-
-		if (user.isEmailVerified) {
+		const existingUser = await User.findOne({ email }).select("_id").lean();
+		if (existingUser) {
 			return res.status(409).json({
-				error: "Email is already verified"
+				error: "Email already exists"
 			});
 		}
 
-		if (user.emailVerificationCode !== verificationCode) {
+		const pendingRegistration = await PendingRegistration.findOneAndDelete({
+			email,
+			verificationCodeHash: hashVerificationCode(verificationCode),
+			expiresAt: { $gt: new Date() }
+		});
+
+		if (!pendingRegistration) {
+			const pendingEmail = await PendingRegistration.findOne({ email }).select("expiresAt").lean();
 			return res.status(400).json({
-				error: "Invalid verification code"
+				error: pendingEmail && pendingEmail.expiresAt <= new Date()
+					? "Verification code has expired"
+					: "Invalid verification code"
 			});
 		}
 
-		if (!user.emailVerificationExpires || user.emailVerificationExpires <= new Date()) {
-			return res.status(400).json({
-				error: "Verification code has expired"
+		try {
+			await User.create({
+				name: pendingRegistration.name,
+				email: pendingRegistration.email,
+				isEmailVerified: true,
+				categories: defaultCategories
 			});
+		} catch (error) {
+			if (error.code === 11000) {
+				return res.status(409).json({
+					error: "Email already exists"
+				});
+			}
+			throw error;
 		}
-
-		user.isEmailVerified = true;
-		user.emailVerificationCode = null;
-		user.emailVerificationExpires = null;
-		await user.save();
 
 		return res.status(200).json({
 			message: "Email verified successfully. You can now set your password."

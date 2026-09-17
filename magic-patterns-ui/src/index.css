@@ -1,0 +1,102 @@
+/* @import url() FONT IMPORTS MUST ALWAYS BE AT THE VERY TOP OF THIS FILE, ABOVE THE TAILWIND IMPORTS — DO NOT DELETE THIS COMMENT */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORTS MUST NEVER BE DELETED OR REORDERED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+/* ==========================================================================
+   SpendWise design tokens exposed as CSS variables.
+   Tailwind is the primary consumer surface; these exist for SVG charts,
+   inline styles and anything that needs a raw value at runtime.
+   ========================================================================== */
+:root {
+  --sw-canvas: #f5f6f8;
+  --sw-surface: #ffffff;
+  --sw-sunken: #fafbfc;
+  --sw-ink-900: #0f1a2a;
+  --sw-ink-600: #5a6474;
+  --sw-ink-400: #8b95a5;
+  --sw-line-subtle: #edeff2;
+  --sw-line: #e1e4e9;
+  --sw-line-strong: #c9ced6;
+  --sw-accent: #2b5fd9;
+  --sw-income: #12734a;
+  --sw-expense: #b42318;
+  --sw-warning: #a15c07;
+  --sw-info: #1f5fa8;
+  --sw-viz-1: #2b5fd9;
+  --sw-viz-2: #0e8c7f;
+  --sw-viz-3: #7a5af8;
+  --sw-viz-4: #c77700;
+  --sw-viz-5: #b4477b;
+  --sw-viz-6: #3f8a2e;
+  --sw-viz-7: #6b7585;
+  /* Spacing rhythm — documented here, applied via Tailwind scale */
+  --sw-page-gutter: 1rem; /* mobile  */
+  --sw-page-gutter-lg: 2rem; /* desktop */
+  --sw-section-gap: 1.5rem;
+  --sw-card-pad: 1.25rem;
+}
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-body text-ink-900 font-sans;
+  }
+  /* Never rely on the UA focus ring — every interactive element opts into
+     .focus-ring or ring utilities explicitly. */
+  :focus {
+    outline: none;
+  }
+  ::selection {
+    background-color: #dce6fd;
+    color: #0f1a2a;
+  }
+}
+@layer utilities {
+  /* Tabular figures: every financial amount uses this so digits align
+     down a column and numbers don't jitter when values change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1, 'ss01' 1;
+  }
+  .focus-ring {
+    @apply outline-none ring-2 ring-accent-500 ring-offset-2 ring-offset-surface;
+  }
+  .focus-ring-inset {
+    @apply outline-none ring-2 ring-inset ring-accent-500;
+  }
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: #c9ced6 transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: #c9ced6;
+    border-radius: 999px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+/* Respect reduced-motion globally. Motion in SpendWise is always optional. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

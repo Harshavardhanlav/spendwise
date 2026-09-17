@@ -15,7 +15,17 @@ verifyEmailTransport();
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || [
+  "http://localhost:3000",
+  "https://spendwise-two-rosy.vercel.app"
+].join(","))
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: allowedOrigins
+}));
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
