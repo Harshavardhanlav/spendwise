@@ -35,10 +35,15 @@ const getStoredUser = () => {
   }
 };
 
+const getPendingRegistrationEmail = () => {
+  const email = sessionStorage.getItem('spendwisePendingEmail');
+  return email && email.includes('@') ? email : '';
+};
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [authStage, setAuthStage] = useState('login');
-  const [authEmail, setAuthEmail] = useState('');
+  const [authStage, setAuthStage] = useState(() => getPendingRegistrationEmail() ? 'verify' : 'login');
+  const [authEmail, setAuthEmail] = useState(() => getPendingRegistrationEmail());
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -46,7 +51,7 @@ function App() {
     const token = localStorage.getItem('spendwiseToken');
     if (!token) {
       setCurrentUser(null);
-      setAuthStage('login');
+      setAuthStage(getPendingRegistrationEmail() ? 'verify' : 'login');
       setAuthLoading(false);
       return undefined;
     }
@@ -104,15 +109,15 @@ function App() {
   }
 
   if (authStage === 'register') {
-    return <RegisterPage onRegistered={(email) => { setAuthEmail(email); setAuthStage('verify'); }} onLogin={() => setAuthStage('login')} />;
+    return <RegisterPage onRegistered={(email) => { sessionStorage.setItem('spendwisePendingEmail', email); setAuthEmail(email); setAuthStage('verify'); }} onLogin={() => setAuthStage('login')} />;
   }
 
   if (authStage === 'verify') {
-    return <VerifyEmailPage email={authEmail} onVerified={() => setAuthStage('set-password')} onBack={() => setAuthStage('register')} />;
+    return <VerifyEmailPage email={authEmail} onVerified={() => { sessionStorage.removeItem('spendwisePendingEmail'); setAuthStage('set-password'); }} onBack={() => { sessionStorage.removeItem('spendwisePendingEmail'); setAuthStage('register'); }} />;
   }
 
   if (authStage === 'set-password') {
-    return <SetPasswordPage email={authEmail} onComplete={() => setAuthStage('login')} />;
+    return <SetPasswordPage email={authEmail} onComplete={() => { sessionStorage.removeItem('spendwisePendingEmail'); setAuthStage('login'); }} />;
   }
 
   if (authStage === 'forgot-password') {

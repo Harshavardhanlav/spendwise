@@ -505,6 +505,12 @@
 .account-form { display: grid; gap: 18px; }
 .account-form select { width: 100%; height: 46px; border: 1px solid var(--sw-border); border-radius: 6px; padding: 0 12px; background: var(--sw-surface); color: var(--sw-ink); }
 .account-form input[readonly] { background: var(--sw-surface-muted); color: var(--sw-text-muted); }
+.settings-grid .auth-inline-link { align-self: flex-start; margin-top: 4px; padding: 0; border: 0; background: transparent; color: var(--sw-primary); font-size: 12px; font-weight: 700; }
+.settings-grid .auth-inline-link:hover { text-decoration: underline; }
+.settings-grid .auth-inline-link:disabled { cursor: wait; opacity: .6; text-decoration: none; }
+.settings-grid .account-form > p:first-child { margin: 0; color: var(--sw-ink); font-size: 14px; font-weight: 700; }
+.settings-grid .account-form > .field-hint { margin: -10px 0 0; line-height: 1.5; }
+.settings-grid .account-form .auth-field input { background: var(--sw-surface); letter-spacing: .16em; text-align: center; }
 .account-state { display: grid; min-height: 420px; place-content: center; justify-items: center; gap: 10px; text-align: center; }
 .account-state h2, .account-state p { margin: 0; }
 .account-state h2 { color: var(--sw-ink); font-size: 22px; }

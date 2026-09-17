@@ -46,22 +46,32 @@ const userSchema = new mongoose.Schema(
       default: false
     },
 
-    emailVerificationCode: {
-      type: String,
-      default: null
-    },
-
-    emailVerificationExpires: {
-      type: Date,
-      default: null
-    },
-
     passwordResetCode: {
       type: String,
       default: null
     },
 
     passwordResetExpires: {
+      type: Date,
+      default: null
+    },
+
+    settingsPasswordResetCodeHash: {
+      type: String,
+      default: null
+    },
+
+    settingsPasswordResetExpires: {
+      type: Date,
+      default: null
+    },
+
+    settingsPasswordResetAuthorizedUntil: {
+      type: Date,
+      default: null
+    },
+
+    settingsPasswordResetLastCodeSentAt: {
       type: Date,
       default: null
     },

@@ -26,6 +26,11 @@ const pendingRegistrationSchema = new mongoose.Schema(
 		expiresAt: {
 			type: Date,
 			required: true
+		},
+
+		lastCodeSentAt: {
+			type: Date,
+			required: true
 		}
 	},
 	{

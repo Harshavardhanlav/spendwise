@@ -14,6 +14,13 @@ export function verifyEmail({ email, verificationCode }) {
   });
 }
 
+export function resendVerificationCode({ email }) {
+  return apiRequest('/api/auth/resend-code', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
 export function setPassword({ email, password }) {
   return apiRequest('/api/auth/set-password', {
     method: 'POST',

@@ -23,3 +23,15 @@ export function updateCurrency(currency) {
 export function changePassword(data) {
   return apiRequest('/api/auth/change-password', authOptions('PUT', data));
 }
+
+export function sendSettingsPasswordRecoveryCode() {
+  return apiRequest('/api/auth/settings/forgot-password', authOptions('POST'));
+}
+
+export function verifySettingsPasswordRecoveryCode(code) {
+  return apiRequest('/api/auth/settings/verify-password-reset-code', authOptions('POST', { code }));
+}
+
+export function resetSettingsPassword(newPassword) {
+  return apiRequest('/api/auth/settings/reset-password', authOptions('POST', { newPassword }));
+}

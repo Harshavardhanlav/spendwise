@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { ArrowRight, MailCheck } from 'lucide-react';
 import AuthLayout from '../components/auth/AuthLayout';
 import Button from '../components/ui/Button';
-import { verifyEmail } from '../services/authApi';
+import { resendVerificationCode, verifyEmail } from '../services/authApi';
 
 function VerifyEmailPage({ email, onVerified, onBack }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
 
   const submit = async (event) => {
@@ -27,9 +28,19 @@ function VerifyEmailPage({ email, onVerified, onBack }) {
     }
   };
 
-  const resend = () => {
+  const resend = async () => {
     setError('');
-    setResendMessage('Resending codes is not available in the current backend API. Please register again if the code expired.');
+    setResendMessage('');
+    setResendLoading(true);
+    try {
+      const result = await resendVerificationCode({ email });
+      setCode('');
+      setResendMessage(result.message || 'New verification code sent');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   return (
@@ -39,9 +50,9 @@ function VerifyEmailPage({ email, onVerified, onBack }) {
         <div className="auth-field"><label htmlFor="verification-code">Verification code</label><input id="verification-code" inputMode="numeric" autoComplete="one-time-code" maxLength="6" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} placeholder="000000" /></div>
         {error && <div className="auth-alert" role="alert">{error}</div>}
         {resendMessage && <div className="auth-note" role="status">{resendMessage}</div>}
-        <Button type="submit" size="large" className="auth-submit" disabled={loading}>{loading ? 'Verifying...' : 'Verify email'} {!loading && <ArrowRight size={17} aria-hidden="true" />}</Button>
+        <Button type="submit" size="large" className="auth-submit" disabled={loading || resendLoading}>{loading ? 'Verifying...' : 'Verify email'} {!loading && <ArrowRight size={17} aria-hidden="true" />}</Button>
       </form>
-      <div className="verify-actions"><button type="button" onClick={resend}>Resend code</button><button type="button" onClick={onBack}>Use a different email</button></div>
+      <div className="verify-actions"><span>Didn't receive the code?</span><button type="button" onClick={resend} disabled={loading || resendLoading}>{resendLoading ? 'Sending...' : 'Resend code'}</button><button type="button" onClick={onBack} disabled={loading || resendLoading}>Use a different email</button></div>
     </AuthLayout>
   );
 }

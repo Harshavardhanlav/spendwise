@@ -3,20 +3,25 @@ import { Eye, EyeOff, LogOut } from 'lucide-react';
 import Card, { CardBody, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import AuthField from '../components/auth/AuthField';
-import { changePassword, getCurrentUser, updateCurrency } from '../services/userApi';
+import { changePassword, getCurrentUser, resetSettingsPassword, sendSettingsPasswordRecoveryCode, updateCurrency, verifySettingsPasswordRecoveryCode } from '../services/userApi';
 
 function SettingsPage({ onUnauthorized, onLogout }) {
   const [currency, setCurrency] = useState('INR');
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [recoveryPasswords, setRecoveryPasswords] = useState({ newPassword: '', confirmPassword: '' });
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryStep, setRecoveryStep] = useState('idle');
   const [visible, setVisible] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
   const [loading, setLoading] = useState(true);
   const [currencySaving, setCurrencySaving] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    getCurrentUser().then((result) => setCurrency(result.user.currency || 'INR')).catch((requestError) => {
+    getCurrentUser().then((result) => { setCurrency(result.user.currency || 'INR'); setRegisteredEmail(result.user.email || ''); }).catch((requestError) => {
       if (requestError.status === 401 || requestError.status === 403) onUnauthorized();
       else setError(requestError.message);
     }).finally(() => setLoading(false));
@@ -28,7 +33,7 @@ function SettingsPage({ onUnauthorized, onLogout }) {
       const result = await updateCurrency(currency);
       localStorage.setItem('spendwiseUser', JSON.stringify(result.user)); setSuccess('Currency preference saved.');
     } catch (requestError) {
-      if (requestError.status === 401 || requestError.status === 403) return onUnauthorized();
+      if (requestError.status === 401) return onUnauthorized();
       setError(requestError.message);
     } finally { setCurrencySaving(false); }
   };
@@ -50,9 +55,52 @@ function SettingsPage({ onUnauthorized, onLogout }) {
 
   const passwordField = (label, field, autoComplete) => <div className="password-field"><AuthField label={label} id={`settings-${field}`} type={visible[field] ? 'text' : 'password'} autoComplete={autoComplete} value={passwords[field]} onChange={(event) => setPasswords({ ...passwords, [field]: event.target.value })} /><button type="button" className="password-toggle" aria-label={visible[field] ? 'Hide password' : 'Show password'} onClick={() => setVisible({ ...visible, [field]: !visible[field] })}>{visible[field] ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>;
 
+  const maskedEmail = registeredEmail.replace(/^(.{2}).*(@.*)$/, '$1•••$2');
+
+  const sendRecoveryCode = async () => {
+    if (recoveryLoading) return;
+    setError(''); setSuccess(''); setRecoveryLoading(true);
+    try {
+      await sendSettingsPasswordRecoveryCode();
+      setRecoveryStep('code'); setSuccess(`Verification code sent to ${maskedEmail}.`);
+    } catch (requestError) {
+      if (requestError.status === 401 || requestError.status === 403) return onUnauthorized();
+      setError(requestError.message);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const verifyRecoveryCode = async (event) => {
+    event.preventDefault(); setError(''); setSuccess('');
+    if (!/^\d{6}$/.test(recoveryCode)) return setError('Enter the 6-digit verification code.');
+    try {
+      await verifySettingsPasswordRecoveryCode(recoveryCode);
+      setRecoveryStep('reset'); setRecoveryCode(''); setSuccess('Email verified. You can now set a new password.');
+    } catch (requestError) {
+      if (requestError.status === 401) return onUnauthorized();
+      setError(requestError.message);
+    }
+  };
+
+  const resetRecoveredPassword = async (event) => {
+    event.preventDefault(); setError(''); setSuccess('');
+    if (recoveryPasswords.newPassword.length < 8) return setError('New password must be at least 8 characters long.');
+    if (recoveryPasswords.newPassword !== recoveryPasswords.confirmPassword) return setError('New passwords do not match.');
+    try {
+      await resetSettingsPassword(recoveryPasswords.newPassword);
+      setRecoveryStep('idle'); setRecoveryPasswords({ newPassword: '', confirmPassword: '' }); setSuccess('Password reset successful.');
+    } catch (requestError) {
+      if (requestError.status === 401) return onUnauthorized();
+      setError(requestError.message);
+    }
+  };
+
+  const recoveryPasswordField = (label, field) => <div className="password-field"><AuthField label={label} id={`settings-recovery-${field}`} type={visible[field] ? 'text' : 'password'} autoComplete="new-password" value={recoveryPasswords[field]} onChange={(event) => setRecoveryPasswords({ ...recoveryPasswords, [field]: event.target.value })} /><button type="button" className="password-toggle" aria-label={visible[field] ? 'Hide password' : 'Show password'} onClick={() => setVisible({ ...visible, [field]: !visible[field] })}>{visible[field] ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>;
+
   if (loading) return <div className="account-state"><div className="dashboard-spinner" /><h2>Loading your settings</h2></div>;
 
-  return <div className="account-page"><div className="account-intro"><div><span className="eyebrow">Preferences</span><h2>Settings</h2><p>Manage your currency and account security.</p></div></div>{(error || success) && <div className={error ? 'auth-alert' : 'auth-note'} role={error ? 'alert' : 'status'}>{error || success}</div>}<div className="settings-grid"><Card><CardHeader title="Currency" description="Used when displaying your financial amounts" /><CardBody><form className="account-form" onSubmit={saveCurrency}><div className="auth-field"><label htmlFor="settings-currency">Preferred currency</label><select id="settings-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="INR">INR — Indian Rupee</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option><option value="GBP">GBP — Pound Sterling</option></select></div><Button type="submit" disabled={currencySaving}>{currencySaving ? 'Saving...' : 'Save currency'}</Button></form></CardBody></Card><Card><CardHeader title="Change password" description="Confirm your current password before changing it" /><CardBody><form className="account-form" onSubmit={savePassword}>{passwordField('Current password', 'currentPassword', 'current-password')}{passwordField('New password', 'newPassword', 'new-password')}{passwordField('Confirm new password', 'confirmPassword', 'new-password')}<Button type="submit" disabled={passwordSaving}>{passwordSaving ? 'Changing password...' : 'Change password'}</Button></form></CardBody></Card><Card><CardHeader title="Security" description="End your current SpendWise session" /><CardBody><Button variant="danger" icon={<LogOut size={16} />} onClick={onLogout}>Log out</Button></CardBody></Card></div></div>;
+  return <div className="account-page"><div className="account-intro"><div><span className="eyebrow">Preferences</span><h2>Settings</h2><p>Manage your currency and account security.</p></div></div>{(error || success) && <div className={error ? 'auth-alert' : 'auth-note'} role={error ? 'alert' : 'status'}>{error || success}</div>}<div className="settings-grid"><Card><CardHeader title="Currency" description="Used when displaying your financial amounts" /><CardBody><form className="account-form" onSubmit={saveCurrency}><div className="auth-field"><label htmlFor="settings-currency">Preferred currency</label><select id="settings-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="INR">INR — Indian Rupee</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option><option value="GBP">GBP — Pound Sterling</option></select></div><Button type="submit" disabled={currencySaving}>{currencySaving ? 'Saving...' : 'Save currency'}</Button></form></CardBody></Card><Card><CardHeader title="Change password" description="Confirm your current password before changing it" /><CardBody>{recoveryStep === 'idle' && <><form className="account-form" onSubmit={savePassword}>{passwordField('Current password', 'currentPassword', 'current-password')}{passwordField('New password', 'newPassword', 'new-password')}{passwordField('Confirm new password', 'confirmPassword', 'new-password')}<Button type="submit" disabled={passwordSaving}>{passwordSaving ? 'Changing password...' : 'Change password'}</Button></form><button type="button" className="auth-inline-link" onClick={sendRecoveryCode} disabled={recoveryLoading}>{recoveryLoading ? 'Sending code...' : 'Forgot current password?'}</button></>}{recoveryStep === 'code' && <form className="account-form" onSubmit={verifyRecoveryCode}><p>Verify your email</p><p className="field-hint">We'll send a verification code to {maskedEmail}.</p><div className="auth-field"><label htmlFor="settings-recovery-code">Verification code</label><input id="settings-recovery-code" inputMode="numeric" autoComplete="one-time-code" maxLength="6" value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, ''))} placeholder="000000" /></div><Button type="submit">Verify code</Button><button type="button" className="auth-inline-link" onClick={sendRecoveryCode} disabled={recoveryLoading}>{recoveryLoading ? 'Sending code...' : 'Resend code'}</button></form>}{recoveryStep === 'reset' && <form className="account-form" onSubmit={resetRecoveredPassword}><p>Set a new password</p>{recoveryPasswordField('New password', 'newPassword')}{recoveryPasswordField('Confirm new password', 'confirmPassword')}<Button type="submit">Reset password</Button></form>}</CardBody></Card><Card><CardHeader title="Security" description="End your current SpendWise session" /><CardBody><Button variant="danger" icon={<LogOut size={16} />} onClick={onLogout}>Log out</Button></CardBody></Card></div></div>;
 }
 
 export default SettingsPage;

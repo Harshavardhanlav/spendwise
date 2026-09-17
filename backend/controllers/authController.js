@@ -17,6 +17,8 @@ const defaultCategories = [
 const verificationCodeExpiresMinutes = Number(
 	process.env.EMAIL_VERIFICATION_EXPIRES_MINUTES || 10
 );
+const resendCooldownSeconds = Number(process.env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS || 60);
+const settingsResetAuthorizationMinutes = Number(process.env.SETTINGS_PASSWORD_RESET_AUTHORIZATION_MINUTES || 10);
 const smtpTimeoutMs = Number(process.env.SMTP_TIMEOUT_MS || 15000);
 
 const createMailTransporter = () => {
@@ -93,6 +95,29 @@ const sendPasswordResetEmail = async (email, name, resetCode) => {
 	});
 };
 
+const createSettingsPasswordResetCode = () => crypto.randomInt(100000, 1000000).toString();
+
+const sendSettingsPasswordResetCode = async (user) => {
+	const verificationCode = createSettingsPasswordResetCode();
+	user.settingsPasswordResetCodeHash = hashVerificationCode(verificationCode);
+	user.settingsPasswordResetExpires = new Date(
+		Date.now() + verificationCodeExpiresMinutes * 60 * 1000
+	);
+	user.settingsPasswordResetAuthorizedUntil = null;
+	user.settingsPasswordResetLastCodeSentAt = new Date();
+	await user.save();
+
+	try {
+		await sendVerificationEmail(user.email, user.name, verificationCode);
+	} catch (error) {
+		user.settingsPasswordResetCodeHash = null;
+		user.settingsPasswordResetExpires = null;
+		user.settingsPasswordResetLastCodeSentAt = null;
+		await user.save();
+		throw error;
+	}
+};
+
 const verifyEmailTransport = async () => {
 	try {
 		const transporter = createMailTransporter();
@@ -144,13 +169,15 @@ const register = async (req, res) => {
 		const verificationExpires = new Date(
 			Date.now() + verificationCodeExpiresMinutes * 60 * 1000
 		);
+		const codeSentAt = new Date();
 
 		const pendingRegistration = await PendingRegistration.findOneAndUpdate(
 			{ email },
 			{
 				name,
 				verificationCodeHash: hashVerificationCode(verificationCode),
-				expiresAt: verificationExpires
+				expiresAt: verificationExpires,
+				lastCodeSentAt: codeSentAt
 			},
 			{ upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
 		);
@@ -231,7 +258,7 @@ const verifyEmail = async (req, res) => {
 			});
 		}
 
-		const pendingRegistration = await PendingRegistration.findOneAndDelete({
+		const pendingRegistration = await PendingRegistration.findOne({
 			email,
 			verificationCodeHash: hashVerificationCode(verificationCode),
 			expiresAt: { $gt: new Date() }
@@ -262,6 +289,8 @@ const verifyEmail = async (req, res) => {
 			throw error;
 		}
 
+		await PendingRegistration.deleteOne({ _id: pendingRegistration._id });
+
 		return res.status(200).json({
 			message: "Email verified successfully. You can now set your password."
 		});
@@ -270,6 +299,75 @@ const verifyEmail = async (req, res) => {
 		return res.status(500).json({
 			error: "Unable to verify email"
 		});
+	}
+};
+
+const resendCode = async (req, res) => {
+	const email = normalizeEmail(req.body?.email);
+
+	if (typeof email !== "string" || !email) {
+		return res.status(400).json({ error: "Email is required" });
+	}
+
+	try {
+		const existingUser = await User.findOne({ email }).select("_id").lean();
+		if (existingUser) {
+			return res.status(409).json({ error: "Email already exists" });
+		}
+
+		const pendingRegistration = await PendingRegistration.findOne({ email });
+		if (!pendingRegistration) {
+			return res.status(404).json({
+				error: "No pending registration found. Please register again."
+			});
+		}
+
+		const now = new Date();
+		const lastCodeSentAt = pendingRegistration.lastCodeSentAt || pendingRegistration.createdAt || new Date(0);
+		const cooldownEndsAt = new Date(
+			lastCodeSentAt.getTime() + resendCooldownSeconds * 1000
+		);
+		if (cooldownEndsAt > now) {
+			const waitSeconds = Math.ceil((cooldownEndsAt.getTime() - now.getTime()) / 1000);
+			return res.status(429).json({
+				error: `Please wait ${waitSeconds} seconds before requesting another code`
+			});
+		}
+
+		const verificationCode = crypto.randomInt(100000, 1000000).toString();
+		pendingRegistration.verificationCodeHash = hashVerificationCode(verificationCode);
+		pendingRegistration.expiresAt = new Date(
+			Date.now() + verificationCodeExpiresMinutes * 60 * 1000
+		);
+		pendingRegistration.lastCodeSentAt = now;
+		await pendingRegistration.save();
+
+		try {
+			console.log("[AUTH] Verification email resend started");
+			await sendVerificationEmail(email, pendingRegistration.name, verificationCode);
+			console.log("[AUTH] Verification email resend completed");
+		} catch (emailError) {
+			await PendingRegistration.deleteOne({
+				_id: pendingRegistration._id,
+				verificationCodeHash: pendingRegistration.verificationCodeHash
+			});
+			throw emailError;
+		}
+
+		return res.status(200).json({
+			message: "New verification code sent"
+		});
+	} catch (error) {
+		if (error.code === "EMAIL_NOT_CONFIGURED") {
+			return res.status(503).json({ error: "Email service is not configured" });
+		}
+
+		if (isSmtpAuthenticationError(error)) {
+			return res.status(502).json({ error: "Email service authentication failed" });
+		}
+
+		console.error("Resend verification code failed:", error.message);
+		return res.status(500).json({ error: "Unable to resend verification code" });
 	}
 };
 
@@ -496,6 +594,119 @@ const resetPassword = async (req, res) => {
 	}
 };
 
+const sendSettingsPasswordRecoveryCode = async (req, res) => {
+	try {
+		const lastSentAt = req.user.settingsPasswordResetLastCodeSentAt;
+		if (lastSentAt) {
+			const cooldownEndsAt = new Date(lastSentAt.getTime() + resendCooldownSeconds * 1000);
+			if (cooldownEndsAt > new Date()) {
+				return res.status(429).json({
+					error: "Please wait before requesting another code"
+				});
+			}
+		}
+
+		await sendSettingsPasswordResetCode(req.user);
+		return res.status(200).json({
+			message: "Verification code sent"
+		});
+	} catch (error) {
+		if (error.code === "EMAIL_NOT_CONFIGURED") {
+			return res.status(503).json({ error: "Email service is not configured" });
+		}
+
+		if (isSmtpAuthenticationError(error)) {
+			return res.status(502).json({ error: "Email service authentication failed" });
+		}
+
+		console.error("Settings password recovery code failed:", error.message);
+		return res.status(500).json({ error: "Unable to send verification code" });
+	}
+};
+
+const verifySettingsPasswordRecoveryCode = async (req, res) => {
+	const code = typeof req.body?.code === "string" ? req.body.code.trim() : req.body?.code;
+
+	if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+		return res.status(400).json({ error: "A valid 6-digit verification code is required" });
+	}
+
+	try {
+		const authorizedUntil = new Date(
+			Date.now() + settingsResetAuthorizationMinutes * 60 * 1000
+		);
+		const user = await User.findOneAndUpdate(
+			{
+				_id: req.user._id,
+				settingsPasswordResetCodeHash: hashVerificationCode(code),
+				settingsPasswordResetExpires: { $gt: new Date() }
+			},
+			{
+				$set: { settingsPasswordResetAuthorizedUntil: authorizedUntil },
+				$unset: {
+					settingsPasswordResetCodeHash: "",
+					settingsPasswordResetExpires: ""
+				}
+			},
+			{ new: true }
+		);
+
+		if (!user) {
+			const hasUnexpiredCode = req.user.settingsPasswordResetExpires
+				&& req.user.settingsPasswordResetExpires > new Date();
+			return res.status(400).json({
+				error: hasUnexpiredCode ? "Invalid verification code" : "Verification code expired"
+			});
+		}
+
+		return res.status(200).json({
+			message: "Email verified. You can now set a new password."
+		});
+	} catch (error) {
+		console.error("Settings password recovery verification failed:", error.message);
+		return res.status(500).json({ error: "Unable to verify recovery code" });
+	}
+};
+
+const resetPasswordFromSettings = async (req, res) => {
+	const newPassword = req.body?.newPassword;
+
+	if (typeof newPassword !== "string" || !newPassword.trim() || newPassword.length < 8) {
+		return res.status(400).json({
+			error: "New password must be at least 8 characters long"
+		});
+	}
+
+	try {
+		const password = await bcrypt.hash(newPassword, 12);
+		const user = await User.findOneAndUpdate(
+			{
+				_id: req.user._id,
+				settingsPasswordResetAuthorizedUntil: { $gt: new Date() }
+			},
+			{
+				$set: { password },
+				$unset: {
+					settingsPasswordResetAuthorizedUntil: "",
+					settingsPasswordResetCodeHash: "",
+					settingsPasswordResetExpires: "",
+					settingsPasswordResetLastCodeSentAt: ""
+				}
+			},
+			{ new: true }
+		);
+
+		if (!user) {
+			return res.status(403).json({ error: "Password reset authorization expired" });
+		}
+
+		return res.status(200).json({ message: "Password reset successful" });
+	} catch (error) {
+		console.error("Settings password reset failed:", error.message);
+		return res.status(500).json({ error: "Unable to reset password" });
+	}
+};
+
 const getCurrentUser = async (req, res) => {
 	return res.status(200).json({ user: safeUser(req.user) });
 };
@@ -572,10 +783,14 @@ const changePassword = async (req, res) => {
 module.exports = {
 	register,
 	verifyEmail,
+	resendCode,
 	setPassword,
 	login,
 	forgotPassword,
 	resetPassword,
+	sendSettingsPasswordRecoveryCode,
+	verifySettingsPasswordRecoveryCode,
+	resetPasswordFromSettings,
 	getCurrentUser,
 	updateProfile,
 	updateCurrency,
