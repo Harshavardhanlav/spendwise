@@ -4,14 +4,15 @@ const path = require("path");
 const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, ".env") });
 
+console.log(`[EMAIL] Sendlib API key configured: ${Boolean(process.env.SENDLIB_API_KEY)}`);
+console.log(`[EMAIL] EMAIL_FROM configured: ${Boolean(process.env.EMAIL_FROM)}`);
+
 const connectDB = require("./config.js/db");
-const { verifyEmailTransport } = require("./controllers/authController");
 const authRoutes = require("./routes/authRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const budgetRoutes = require("./routes/budgetRoutes");
 connectDB();
-verifyEmailTransport();
 
 const app = express();
 

@@ -1,9 +1,13 @@
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const User = require("../models/user");
 const PendingRegistration = require("../models/pendingRegistration");
+const {
+	sendSettingsPasswordRecoveryEmail,
+	sendVerificationEmail,
+	sendPasswordResetEmail
+} = require("../services/emailService");
 
 const defaultCategories = [
 	{ name: "Salary", icon: "💼" },
@@ -19,40 +23,6 @@ const verificationCodeExpiresMinutes = Number(
 );
 const resendCooldownSeconds = Number(process.env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS || 60);
 const settingsResetAuthorizationMinutes = Number(process.env.SETTINGS_PASSWORD_RESET_AUTHORIZATION_MINUTES || 10);
-const smtpTimeoutMs = Number(process.env.SMTP_TIMEOUT_MS || 15000);
-
-const createMailTransporter = () => {
-	const requiredSettings = [
-		"SMTP_HOST",
-		"SMTP_PORT",
-		"SMTP_USER",
-		"SMTP_PASS",
-		"EMAIL_FROM"
-	];
-
-	if (requiredSettings.some((setting) => !process.env[setting])) {
-		const error = new Error("Email service is not configured");
-		error.code = "EMAIL_NOT_CONFIGURED";
-		throw error;
-	}
-
-	return nodemailer.createTransport({
-		host: process.env.SMTP_HOST,
-		port: Number(process.env.SMTP_PORT),
-		secure: process.env.SMTP_SECURE === "true",
-		connectionTimeout: smtpTimeoutMs,
-		greetingTimeout: smtpTimeoutMs,
-		socketTimeout: smtpTimeoutMs,
-		auth: {
-			user: process.env.SMTP_USER,
-			pass: process.env.SMTP_PASS.replace(/\s+/g, "")
-		}
-	});
-};
-
-const isSmtpAuthenticationError = (error) => (
-	error?.code === "EAUTH" || error?.responseCode === 535
-);
 
 const normalizeEmail = (email) => (
 	typeof email === "string" ? email.trim().toLowerCase() : email
@@ -63,6 +33,16 @@ const hashVerificationCode = (verificationCode) => crypto
 	.update(verificationCode)
 	.digest("hex");
 
+const logEmailFailure = (context, error) => {
+	console.error(`[EMAIL] ${context} failed`, {
+		name: error.name,
+		message: error.providerMessage || error.message,
+		code: error.code,
+		providerName: error.providerName,
+		statusCode: error.providerStatusCode
+	});
+};
+
 const safeUser = (user) => ({
 	id: user._id,
 	_id: user._id,
@@ -72,28 +52,6 @@ const safeUser = (user) => ({
 	isEmailVerified: user.isEmailVerified,
 	createdAt: user.createdAt
 });
-
-const sendVerificationEmail = async (email, name, verificationCode) => {
-	const transporter = createMailTransporter();
-
-	await transporter.sendMail({
-		from: process.env.EMAIL_FROM,
-		to: email,
-		subject: "Verify your SpendWise email",
-		text: `Hi ${name}, your SpendWise verification code is ${verificationCode}. It expires in ${verificationCodeExpiresMinutes} minutes.`
-	});
-};
-
-const sendPasswordResetEmail = async (email, name, resetCode) => {
-	const transporter = createMailTransporter();
-
-	await transporter.sendMail({
-		from: process.env.EMAIL_FROM,
-		to: email,
-		subject: "Reset your SpendWise password",
-		text: `Hi ${name}, your SpendWise password reset code is ${resetCode}. It expires in ${verificationCodeExpiresMinutes} minutes. Use this code to create a new password.`
-	});
-};
 
 const createSettingsPasswordResetCode = () => crypto.randomInt(100000, 1000000).toString();
 
@@ -108,7 +66,7 @@ const sendSettingsPasswordResetCode = async (user) => {
 	await user.save();
 
 	try {
-		await sendVerificationEmail(user.email, user.name, verificationCode);
+		await sendSettingsPasswordRecoveryEmail(user.email, user.name, verificationCode);
 	} catch (error) {
 		user.settingsPasswordResetCodeHash = null;
 		user.settingsPasswordResetExpires = null;
@@ -118,25 +76,6 @@ const sendSettingsPasswordResetCode = async (user) => {
 	}
 };
 
-const verifyEmailTransport = async () => {
-	try {
-		const transporter = createMailTransporter();
-		await transporter.verify();
-		console.log("SMTP configuration verified successfully");
-	} catch (error) {
-		if (isSmtpAuthenticationError(error)) {
-			console.error("SMTP authentication failed: check SMTP_USER and the Gmail App Password in backend/.env");
-			return;
-		}
-
-		if (error?.code === "EMAIL_NOT_CONFIGURED") {
-			console.error("SMTP configuration check failed: required SMTP environment variables are missing");
-			return;
-		}
-
-		console.error("SMTP connection check failed:", error.message);
-	}
-};
 
 const register = async (req, res) => {
 	const name = typeof req.body?.name === "string" ? req.body.name.trim() : req.body?.name;
@@ -179,7 +118,7 @@ const register = async (req, res) => {
 				expiresAt: verificationExpires,
 				lastCodeSentAt: codeSentAt
 			},
-			{ upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+			{ upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
 		);
 
 		try {
@@ -198,7 +137,13 @@ const register = async (req, res) => {
 			message: "A verification code has been sent to your email"
 		});
 	} catch (error) {
-		console.error("[AUTH] Registration failed");
+		console.error("[AUTH] Registration failed", {
+			name: error.name,
+			message: error.providerMessage || error.message,
+			code: error.code,
+			providerName: error.providerName,
+			statusCode: error.providerStatusCode
+		});
 		if (error.code === 11000) {
 			return res.status(409).json({
 				error: "Email already exists"
@@ -218,10 +163,10 @@ const register = async (req, res) => {
 			});
 		}
 
-		if (isSmtpAuthenticationError(error)) {
-			console.error("Registration email failed: SMTP authentication failed");
+		if (error.code === "EMAIL_PROVIDER_ERROR") {
+			logEmailFailure("Registration email", error);
 			return res.status(502).json({
-				error: "Email service authentication failed"
+				error: "Email provider rejected the message"
 			});
 		}
 
@@ -362,8 +307,9 @@ const resendCode = async (req, res) => {
 			return res.status(503).json({ error: "Email service is not configured" });
 		}
 
-		if (isSmtpAuthenticationError(error)) {
-			return res.status(502).json({ error: "Email service authentication failed" });
+		if (error.code === "EMAIL_PROVIDER_ERROR") {
+			logEmailFailure("Verification resend", error);
+			return res.status(502).json({ error: "Email provider rejected the message" });
 		}
 
 		console.error("Resend verification code failed:", error.message);
@@ -521,10 +467,10 @@ const forgotPassword = async (req, res) => {
 			});
 		}
 
-		if (isSmtpAuthenticationError(error)) {
-			console.error("Password reset email failed: SMTP authentication failed");
+		if (error.code === "EMAIL_PROVIDER_ERROR") {
+			logEmailFailure("Password reset email", error);
 			return res.status(502).json({
-				error: "Email service authentication failed"
+				error: "Email provider rejected the message"
 			});
 		}
 
@@ -615,8 +561,9 @@ const sendSettingsPasswordRecoveryCode = async (req, res) => {
 			return res.status(503).json({ error: "Email service is not configured" });
 		}
 
-		if (isSmtpAuthenticationError(error)) {
-			return res.status(502).json({ error: "Email service authentication failed" });
+		if (error.code === "EMAIL_PROVIDER_ERROR") {
+			logEmailFailure("Settings recovery email", error);
+			return res.status(502).json({ error: "Email provider rejected the message" });
 		}
 
 		console.error("Settings password recovery code failed:", error.message);
@@ -648,7 +595,7 @@ const verifySettingsPasswordRecoveryCode = async (req, res) => {
 					settingsPasswordResetExpires: ""
 				}
 			},
-			{ new: true }
+			{ returnDocument: "after" }
 		);
 
 		if (!user) {
@@ -693,7 +640,7 @@ const resetPasswordFromSettings = async (req, res) => {
 					settingsPasswordResetLastCodeSentAt: ""
 				}
 			},
-			{ new: true }
+			{ returnDocument: "after" }
 		);
 
 		if (!user) {
@@ -795,5 +742,4 @@ module.exports = {
 	updateProfile,
 	updateCurrency,
 	changePassword,
-	verifyEmailTransport
 };
