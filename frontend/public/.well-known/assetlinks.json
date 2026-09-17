@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.harshaprabandhakavi.spendwise",
+      "sha256_cert_fingerprints": [
+        "10:70:74:D2:DF:27:12:7E:58:FF:AC:6E:25:1B:FA:07:02:48:30:3D:40:21:08:52:EE:00:EF:31:51:04:38:5D"
+      ]
+    }
+  }
+]
