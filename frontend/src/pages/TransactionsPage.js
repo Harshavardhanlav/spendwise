@@ -9,7 +9,7 @@ import TransactionTable from '../components/finance/TransactionTable';
 import { getCategories } from '../services/categoryApi';
 import { createTransaction, deleteTransaction, getTransactions, updateTransaction } from '../services/transactionApi';
 
-function TransactionsPage({ onUnauthorized, openCreateRequest = 0 }) {
+function TransactionsPage({ onUnauthorized, openCreateRequest = 0, onCreateRequestHandled }) {
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [filters, setFilters] = useState({ type: '', categoryId: '', startDate: '', endDate: '' });
@@ -65,8 +65,9 @@ function TransactionsPage({ onUnauthorized, openCreateRequest = 0 }) {
       setEditingTransaction(null);
       setFormError('');
       setFormOpen(true);
+      onCreateRequestHandled();
     }
-  }, [openCreateRequest]);
+  }, [openCreateRequest, onCreateRequestHandled]);
 
   const saveTransaction = async (payload) => {
     setFormLoading(true);

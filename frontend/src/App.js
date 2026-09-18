@@ -101,6 +101,11 @@ function App() {
     setOpenTransactionRequest((request) => request + 1);
   };
 
+  const navigateToPage = (page) => {
+    setOpenTransactionRequest(0);
+    setActivePage(page);
+  };
+
   if (authLoading) {
     return (
       <div className="account-state">
@@ -135,8 +140,8 @@ function App() {
   }
 
   return (
-    <AppShell activePage={activePage} onNavigate={setActivePage} onLogout={logout} onAddTransaction={openTransactionForm}>
-      <Page currentUser={currentUser} onUnauthorized={logout} onLogout={logout} openCreateRequest={openTransactionRequest} />
+    <AppShell activePage={activePage} onNavigate={navigateToPage} onLogout={logout} onAddTransaction={openTransactionForm}>
+      <Page currentUser={currentUser} onUnauthorized={logout} onLogout={logout} openCreateRequest={openTransactionRequest} onCreateRequestHandled={() => setOpenTransactionRequest(0)} />
     </AppShell>
   );
 }
