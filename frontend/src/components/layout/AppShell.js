@@ -3,7 +3,7 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import MobileNav from './MobileNav';
 
-function AppShell({ activePage, onNavigate, onLogout, children }) {
+function AppShell({ activePage, onNavigate, onLogout, onAddTransaction, children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -17,6 +17,7 @@ function AppShell({ activePage, onNavigate, onLogout, children }) {
         activePage={activePage}
         onClose={() => setMobileMenuOpen(false)}
         onNavigate={onNavigate}
+        onAddTransaction={onAddTransaction}
       />
 
       <div className="app-main-column">

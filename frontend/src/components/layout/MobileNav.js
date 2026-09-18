@@ -9,7 +9,7 @@ const mobileItems = [
   { id: 'budgets', label: 'Budgets', icon: Banknote },
 ];
 
-function MobileNav({ open, activePage, onClose, onNavigate }) {
+function MobileNav({ open, activePage, onClose, onNavigate, onAddTransaction }) {
   return (
     <>
       {open && (
@@ -39,7 +39,7 @@ function MobileNav({ open, activePage, onClose, onNavigate }) {
       )}
 
       <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
-        {mobileItems.slice(0, 2).map((item) => {
+        {mobileItems.slice(0, 3).map((item) => {
           const Icon = item.icon;
           return (
             <button type="button" key={item.id} className={`mobile-nav-item${activePage === item.id ? ' is-active' : ''}`} onClick={() => onNavigate(item.id)}>
@@ -48,10 +48,10 @@ function MobileNav({ open, activePage, onClose, onNavigate }) {
             </button>
           );
         })}
-        <button type="button" className="mobile-add-button" aria-label="Add transaction">
+        <button type="button" className="mobile-add-button" aria-label="Add transaction" onClick={onAddTransaction}>
           <Plus size={21} aria-hidden="true" />
         </button>
-        {mobileItems.slice(2).map((item) => {
+        {mobileItems.slice(3).map((item) => {
           const Icon = item.icon;
           return (
             <button

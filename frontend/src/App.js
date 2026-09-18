@@ -46,6 +46,7 @@ function App() {
   const [authEmail, setAuthEmail] = useState(() => getPendingRegistrationEmail());
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [authLoading, setAuthLoading] = useState(true);
+  const [openTransactionRequest, setOpenTransactionRequest] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('spendwiseToken');
@@ -95,6 +96,11 @@ function App() {
     setActivePage('dashboard');
   };
 
+  const openTransactionForm = () => {
+    setActivePage('transactions');
+    setOpenTransactionRequest((request) => request + 1);
+  };
+
   if (authLoading) {
     return (
       <div className="account-state">
@@ -129,8 +135,8 @@ function App() {
   }
 
   return (
-    <AppShell activePage={activePage} onNavigate={setActivePage} onLogout={logout}>
-      <Page currentUser={currentUser} onUnauthorized={logout} onLogout={logout} />
+    <AppShell activePage={activePage} onNavigate={setActivePage} onLogout={logout} onAddTransaction={openTransactionForm}>
+      <Page currentUser={currentUser} onUnauthorized={logout} onLogout={logout} openCreateRequest={openTransactionRequest} />
     </AppShell>
   );
 }
